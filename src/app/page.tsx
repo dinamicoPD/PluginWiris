@@ -1,103 +1,163 @@
-import Image from "next/image";
+'use client';
 
+import React, { useState, useEffect } from 'react';
+import QuestionBankEditor from '@/components/QuestionBankEditor';
+import QuizFromBank from '@/components/QuizFromBank';
+import BankSelector from '@/components/BankSelector';
+
+import type { Question, Bank } from '@/types/question';
+
+// ----- Utils -----
+function uuid() {
+  return Date.now().toString(36) + Math.random().toString(36).substring(2);
+}
+
+const LS_KEY = 'math_banks_v2';
+
+// ----- Componente principal -----
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [selectedBankId, setSelectedBankId] = useState<string>('');
+  const [showQuiz, setShowQuiz] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+  // Estados para QuizFromBank:
+  const [quizAnswers, setQuizAnswers] = useState<{ [qid: number]: string | number[] }>({});
+  const [quizSubmitted, setQuizSubmitted] = useState(false);
+
+  // Carga bancos del localStorage al montar
+  useEffect(() => {
+    const raw = typeof window !== 'undefined' && localStorage.getItem(LS_KEY);
+    let data: { banks: Bank[]; selectedBankId: string } = { banks: [], selectedBankId: '' };
+    if (raw) {
+      try { data = JSON.parse(raw); } catch { }
+    }
+    if (!data.banks || data.banks.length === 0) {
+      // Si no hay bancos, crea uno nuevo
+      const newBank: Bank = { id: uuid(), name: "Banco 1", questions: [] };
+      data = { banks: [newBank], selectedBankId: newBank.id };
+    }
+    setBanks(data.banks);
+    setSelectedBankId(data.selectedBankId || data.banks[0].id);
+    setLoading(false);
+  }, []);
+
+  // Guarda cambios en localStorage cada vez que bancos o selectedBank cambian
+  useEffect(() => {
+    if (banks.length > 0 && selectedBankId) {
+      localStorage.setItem(LS_KEY, JSON.stringify({ banks, selectedBankId }));
+    }
+  }, [banks, selectedBankId]);
+
+  // --- Loader para evitar render si aún no hay bancos ---
+  if (loading || banks.length === 0) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+        <span className="text-xl text-gray-600 animate-pulse">Cargando bancos...</span>
+      </div>
+    );
+  }
+
+  // Banco seguro SIEMPRE
+  const selectedBank = banks.find(b => b.id === selectedBankId) || banks[0];
+
+  // Pasa setQuestions del banco seleccionado
+  const setQuestionsForSelected = (qs: Question[]) => {
+    setBanks(bs =>
+      bs.map(b => b.id === selectedBank.id ? { ...b, questions: qs } : b)
+    );
+  };
+
+  // --- Funciones de bancos ---
+  const handleSelectBank = (id: string) => setSelectedBankId(id);
+
+  const handleNewBank = () => {
+    const name = prompt('Nombre para el nuevo banco:', `Banco ${banks.length + 1}`);
+    if (!name) return;
+    const newBank: Bank = { id: uuid(), name, questions: [] };
+    setBanks(bs => [...bs, newBank]);
+    setSelectedBankId(newBank.id);
+  };
+
+  const handleDeleteBank = (id: string) => {
+    if (!window.confirm('¿Seguro que quieres borrar este banco completo?')) return;
+    const newBanks = banks.filter(b => b.id !== id);
+    setBanks(newBanks);
+    setSelectedBankId(newBanks[0]?.id || '');
+  };
+
+  const handleEditBankName = (id: string, newName: string) => {
+    setBanks(bs => bs.map(b => b.id === id ? { ...b, name: newName } : b));
+  };
+
+  const handleMoveBank = (id: string, dir: 'up' | 'down') => {
+    setBanks(bs => {
+      const idx = bs.findIndex(b => b.id === id);
+      if (idx === -1) return bs;
+      const newBs = [...bs];
+      if (dir === 'up' && idx > 0) {
+        [newBs[idx - 1], newBs[idx]] = [newBs[idx], newBs[idx - 1]];
+      } else if (dir === 'down' && idx < bs.length - 1) {
+        [newBs[idx + 1], newBs[idx]] = [newBs[idx], newBs[idx + 1]];
+      }
+      return newBs;
+    });
+  };
+
+  // ---- FUNCIONES PARA EL QUIZ ----
+  const handleQuizSubmit = (answers: { [qid: number]: string | number[] }) => {
+    setQuizSubmitted(true);
+    // Aquí podrías guardar/calificar/envíar las respuestas...
+    // Por ejemplo:
+    // calificarQuiz(answers, selectedBank.questions)
+  };
+
+  return (
+    <main className="min-h-screen flex flex-col items-center bg-gray-50 p-4">
+      <h1 className="text-2xl font-bold mb-4">Plataforma Matemática (Multi-Banco)</h1>
+      <BankSelector
+        banks={banks.map(b => ({ id: b.id, name: b.name }))}
+        selected={selectedBankId}
+        onChange={handleSelectBank}
+        onNew={handleNewBank}
+        onDelete={handleDeleteBank}
+        onEditName={handleEditBankName}
+        onMove={handleMoveBank}
+      />
+      <QuestionBankEditor
+        questions={selectedBank.questions}
+        setQuestions={setQuestionsForSelected}
+      />
+      <div className="my-8"></div>
+      {!showQuiz && (
+        <button
+          onClick={() => {
+            setShowQuiz(true);
+            setQuizAnswers({});       // Limpiar respuestas al iniciar nuevo quiz
+            setQuizSubmitted(false);  // Resetear estado enviado
+          }}
+          className="px-6 py-2 bg-green-600 text-white rounded font-bold hover:bg-green-700 transition mb-8"
+        >
+          Crear Quiz
+        </button>
+      )}
+      {showQuiz && (
+        <>
+          <QuizFromBank
+            questions={selectedBank.questions}
+            answers={quizAnswers}
+            setAnswers={setQuizAnswers}
+            submitted={quizSubmitted}
+            onSubmit={handleQuizSubmit}
+          />
+          <button
+            onClick={() => setShowQuiz(false)}
+            className="mt-8 px-6 py-2 bg-gray-600 text-white rounded font-bold hover:bg-gray-700 transition"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+            Volver al editor
+          </button>
+        </>
+      )}
+    </main>
   );
 }
