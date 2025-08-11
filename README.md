@@ -151,8 +151,7 @@ README.md
 
 ## 🧑‍💻 Autoría
 
-- Desarrollado por [Tu Nombre o Equipo]
-- [Tu contacto, mail o LinkedIn si deseas]
+- Desarrollado por Yesid Vargas (DinamicoPD)
 
 ---
 
